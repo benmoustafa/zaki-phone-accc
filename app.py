@@ -1,62 +1,55 @@
 import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
 import pandas as pd
-import sqlite3
 
-st.set_page_config(page_title="📱 Phone Store Dashboard", layout="wide")
+# --- Google Sheets Setup ---
+SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
+creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
+client = gspread.authorize(creds)
 
-# Connect to DB
-conn = sqlite3.connect("store.db")
+SHEET_ID1 = "174mvcqlIoM7gQd2Mbxz6UG5i_X9A4ZX1MKkoK1rwh08"  # Replace with your Google Sheet ID
+SHEET_ID2 = "1oVeW7FKF2QEskFlJqQEN8sUD6CvS472m6cTQEEE4wBs"
+# Load both datasets
+products_ws = client.open_by_key(SHEET_ID1).worksheet("Sheet1")
+sales_ws = client.open_by_key(SHEET_ID2).worksheet("Sheet1")
 
-# Load tables
-products_df = pd.read_sql("SELECT * FROM Products", conn)
-sales_df = pd.read_sql("SELECT * FROM DailySales", conn)
+# Convert to DataFrames
+products_df = pd.DataFrame(products_ws.get_all_records())
+sales_df = pd.DataFrame(sales_ws.get_all_records())
 
-st.title("📊 Phone Store Management")
+# --- Streamlit UI ---
+st.title("📊 ZAKI Phone")
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["🔍 Search Product", "🛒 Record Sale", "📈 Reports"])
+tab1, tab2 = st.tabs(["📦 Products", "💰 Sales"])
 
-# --- Search Product ---
+# --- Products Tab ---
 with tab1:
-    search = st.text_input("Enter Product ID or Name")
-    if search:
-        results = products_df[
-            products_df["ProductID"].str.contains(search, case=False, na=False) |
-            products_df["Model"].str.contains(search, case=False, na=False) |
-            products_df["Brand"].str.contains(search, case=False, na=False)
-        ]
-        if not results.empty:
-            st.dataframe(results)
-        else:
-            st.warning("No product found.")
+    st.subheader("Product List")
+    st.dataframe(products_df)
 
-# --- Record Sale ---
-with tab2:
-    with st.form("sale_form"):
-        date = st.date_input("Date")
-        product = st.selectbox("Select Product", products_df["Model"])
-        qty = st.number_input("Quantity Sold", min_value=1, step=1)
-        seller = st.text_input("Seller Name")
-        submit = st.form_submit_button("Save Sale")
+    with st.form("add_product"):
+        brand = st.text_input("Brand")
+        model = st.text_input("Model")
+        price = st.number_input("Price", min_value=0.0, format="%.2f")
+        stock = st.number_input("Stock Quantity", min_value=0, step=1)
+        submit = st.form_submit_button("➕ Add Product")
 
         if submit:
-            product_id = products_df[products_df["Model"] == product]["ProductID"].iloc[0]
-            new_sale = pd.DataFrame([[date, product_id, qty, seller]], 
-                                    columns=["Date", "ProductID", "QuantitySold", "SellerName"])
-            new_sale.to_sql("DailySales", conn, if_exists="append", index=False)
-            st.success("✅ Sale recorded!")
+            products_ws.append_row([brand, model, price, stock])
+            st.success(f"✅ Added {brand} {model}!")
 
-# --- Reports ---
-with tab3:
-    revenue = pd.read_sql("""
-        SELECT s.Date, p.Brand, p.Model, SUM(s.[Quantity Sold] * p.Price) as Revenue
-        FROM DailySales s
-        JOIN Products p ON s.ProductID = p.ProductID
-        GROUP BY s.Date, p.Brand, p.Model
-        ORDER BY s.Date DESC
-    """, conn)
+# --- Sales Tab ---
+with tab2:
+    st.subheader("Sales Records")
+    st.dataframe(sales_df)
 
-    st.subheader("📅 Daily Revenue")
-    st.dataframe(revenue)
+    with st.form("add_sale"):
+        date = st.date_input("Date")
+        product = st.selectbox("Product", products_df["Model"] if not products_df.empty else [])
+        qty = st.number_input("Quantity Sold", min_value=1, step=1)
+        submit_sale = st.form_submit_button("➕ Add Sale")
 
-
+        if submit_sale:
+            sales_ws.append_row([str(date), product, qty])
+            st.success(f"✅ Added sale: {qty} x {product} on {date}")
