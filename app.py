@@ -19,7 +19,7 @@ products_df = pd.DataFrame(products_ws.get_all_records())
 sales_df = pd.DataFrame(sales_ws.get_all_records())
 
 # --- Streamlit UI ---
-st.title("📊 ZAKI Phone")
+st.title("📊 zaki phone Manager")
 
 tab1, tab2 = st.tabs(["📦 Products", "💰 Sales"])
 
